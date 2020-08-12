@@ -52,27 +52,18 @@
 	.include    "jaguar.inc"
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-; Begin STARTUP PICTURE CONFIGURATION -- Edit this to change startup picture
+; Begin SCREEN GEOMETRY CONFIGURATION
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-PPP     	.equ    4      			; Pixels per Phrase (1-bit)
-BMP_WIDTH   	.equ    128     		; Width in Pixels
-BMP_HEIGHT  	.equ    60     			; Height in Pixels
+PPP		.equ	4			; Pixels per Phrase (16-bit)
+SCRN_WIDTH	.equ	320			; Width in Pixels
+SCRN_HEIGHT	.equ	240			; Height in Pixels
+
+BMP_HEIGHT	.equ	(SCRN_HEIGHT/6)		; Scaled up 6x by OP
+BMP_PHRASES	.equ	1			; Width in Phrases, OP repeats
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-; Change this macro as necessary. Games published by Atari but created by a
-; third-party should use "LICENSED TO" screen. Games published and
-; created by a third-party company should use "LICENSED BY" screen.
-; Comment out the line for the screen you don't need.
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-	.macro license_logo
-	.incbin "lt_box.rgb"			; "Licensed To Atari Corp."
-;	.incbin "lb_box.rgb"			; "Licensed By Atari Corp."
-	.endm
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-; End of STARTUP PICTURE CONFIGURATION
+; End SCREEN GEOMETRY CONFIGURATION
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ; Globals
@@ -89,10 +80,9 @@ BMP_HEIGHT  	.equ    60     			; Height in Pixels
 ; Externals
 		.extern	_start
 
-BMP_PHRASES 	.equ    (BMP_WIDTH/PPP) 	; Width in Phrases
-BMP_LINES   	.equ    (BMP_HEIGHT*2)  	; Height in Half Scanlines
+SCRN_PHRASES	.equ	(SCRN_WIDTH/PPP)	; Width in Phrases
 BITMAP_OFF  	.equ    (2*8)       		; Two Phrases
-LISTSIZE    	.equ    5       		; List length (in phrases)
+LISTSIZE    	.equ    6       		; List length (in phrases)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; Program Entry Point Follows...
 
@@ -103,7 +93,8 @@ LISTSIZE    	.equ    5       		; List length (in phrases)
 		move.w  #$FFFF,VI       	; disable video interrupts
 
 		move.l  #INITSTACK,a7   	; Setup a stack
-			
+
+		jsr	InitGreen		; Initialize screen content
 		jsr 	InitVideo      		; Setup our video registers.
 		jsr 	InitLister     		; Initialize Object Display List
 		jsr 	InitVBint      		; Initialize our VBLANK routine
@@ -121,7 +112,7 @@ waitforset:
 		andi.l  #$1,d0
 		bne 	waitforset
 
-		move.w  #$6C7,VMODE     	; Configure Video
+		move.w	#PWIDTH4|BGEN|CSYNC|RGB16|VIDEN,VMODE
 
 	     	jmp 	_start			; Jump to main code
 
@@ -295,20 +286,22 @@ InitLister:
 		move.l	d0,(a0)+
 		move.l	d1,(a0)+
 
-; Write a standard BITMAP object
+; Write a SCALED BITMAP object
 		move.l	d2,d0
 		move.l	d3,d1
+
+		ori.b	#SCBITOBJ,d1		; Type = Scaled Bitmap
 
 		ori.l  #BMP_HEIGHT<<14,d1       ; Height of image
 
 		move.w  height,d4           	; Center bitmap vertically
-		sub.w   #BMP_HEIGHT,d4
+		sub.w   #SCRN_HEIGHT,d4
 		add.w   a_vdb,d4
 		andi.w  #$FFFE,d4               ; Must be even
 		lsl.w   #3,d4
 		or.w    d4,d1                   ; Stuff YPOS in low phrase
 
-		move.l	#license,d4
+		move.l	#green,d4
 		lsl.l	#8,d4
 		or.l	d4,d0
 
@@ -316,20 +309,29 @@ InitLister:
 		move.l	d1,(a0)+
 		movem.l	d0-d1,bmpupdate
 
-; Second Phrase of Bitmap
-		move.l	#BMP_PHRASES>>4,d0	; Only part of top LONG is IWIDTH
-		move.l  #O_DEPTH16|O_NOGAP,d1   ; Bit Depth = 16-bit, Contiguous data
+; Second Phrase of Scaled Bitmap
+		move.l	#SCRN_PHRASES>>4,d0	; Only part of top LONG is IWIDTH
+		move.l  #O_DEPTH16|(0<<15),d1   ; Bit Depth = 16-bit, Repeat data
 
 		move.w  width,d4            	; Get width in clocks
 		lsr.w   #2,d4               	; /4 Pixel Divisor
-		sub.w   #BMP_WIDTH,d4
+		sub.w   #SCRN_WIDTH,d4
 		lsr.w   #1,d4
 		or.w    d4,d1
 
-		ori.l	#(BMP_PHRASES<<18)|(BMP_PHRASES<<28),d1	; DWIDTH|IWIDTH
+		ori.l	#(BMP_PHRASES<<18)|(SCRN_PHRASES<<28),d1 ; DWIDTH|IWIDTH
 
 		move.l	d0,(a0)+
 		move.l	d1,(a0)+
+
+; Third Phrase of Scaled Bitmap
+		; HSCALE = 1.0, VSCALE = 6.0, REMAINDER = 6.0
+		move.l	#(1<<5)|(6<<13)|(6<<21),d1
+		clr.l	d0
+
+		move.l	d0,(a0)+
+		move.l	d1,(a0)+
+		move.l	d1,bmpupdate+8
 
 ; Write a STOP object at end of list
 		clr.l   (a0)+
@@ -355,6 +357,7 @@ UpdateList:
 
 		move.l  bmpupdate,(a0)      	; Phrase = d1.l/d0.l
 		move.l  bmpupdate+4,4(a0)
+		move.l	bmpupdate+8,20(a0)
 
 		add.l	#1,ticks		; Increment ticks semaphore
 
@@ -364,18 +367,32 @@ UpdateList:
 		move.l  (sp)+,a0
 		rte
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Procedure: InitGreen
+;        Draw green pixels to the entire "background" bitmap
+
+InitGreen:
+		movem.l	d0/a0,-(sp)
+		move.l	#green,a0		; Load bitmap address in a0
+		move.l	#(BMP_PHRASES*2*BMP_HEIGHT)-1,d0 ; BMP_LONGS-1
+.fill:
+		; Jaguar RGB16 bits: RRRR.RBBB.BBGG.GGGG.  Fill 2 per loop
+		move.l	#$003F003F,(a0)+
+		dbra	d0,.fill
+
+		movem.l	(sp)+,d0/a0
+		rts
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-		.data
-		.phrase
-license:
-		license_logo
-
 		.bss
-		.dphrase
+		.qphrase
 
+		; 2 Phrases of padding to put scaled bitmap object on a quad-
+		; phrase boundary after 2 Phrases of branch objects.
+		.ds.l	4
 listbuf:    	.ds.l   LISTSIZE*2  		; Object List
-bmpupdate:  	.ds.l   2       		; One Phrase of Bitmap for Refresh
+bmpupdate:  	.ds.l   3       		; 3 Longs of Scaled Bitmap for Refresh
 ticks:		.ds.l	1			; Incrementing # of ticks
 a_hdb:  	.ds.w   1
 a_hde:      	.ds.w   1
@@ -383,5 +400,8 @@ a_vdb:      	.ds.w   1
 a_vde:      	.ds.w   1
 width:      	.ds.w   1
 height:     	.ds.w   1
+
+		.phrase
+green:		.ds.l	BMP_PHRASES*2*BMP_HEIGHT
 
 		.end

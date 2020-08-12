@@ -1,3 +1,4 @@
+ALIGN=q
 include $(JAGSDK)/tools/build/jagdefs.mk
 
 CFLAGS += -mshort -Wall -fno-builtin
