@@ -372,15 +372,31 @@ UpdateList:
 ;        Draw green pixels to the entire "background" bitmap
 
 InitGreen:
-		movem.l	d0/a0,-(sp)
-		move.l	#green,a0		; Load bitmap address in a0
-		move.l	#(BMP_PHRASES*2*BMP_HEIGHT)-1,d0 ; BMP_LONGS-1
-.fill:
-		; Jaguar RGB16 bits: RRRR.RBBB.BBGG.GGGG.  Fill 2 per loop
-		move.l	#$003F003F,(a0)+
-		dbra	d0,.fill
+		; Set address of destination surface
+		move.l	#green,A1_BASE
+		; Contiguous phrases,
+		; 16-bit pixels,
+		; Window Width = 4 pixels (Should be BMP_WIDTH)
+		; Blit a phrase at a time
+		move.l	#PITCH1|PIXEL16|WID4|XADDPHR,A1_FLAGS
 
-		movem.l	(sp)+,d0/a0
+		; Start at <0 (low 16 bits), 0 (high 16 bits)>
+		move.l	#0,A1_PIXEL
+
+		; After each line, back X up BMP_WIDTH pixels, add 1 to Y
+		move.l	#(1<<16)|((-(BMP_PHRASES*4))&($0000ffff)),A1_STEP
+
+		; Run inner (X) loop BMP_WIDTH times, outer (Y) loop BMP_HEIGHT times
+		move.l	#(BMP_HEIGHT<<16)|(BMP_PHRASES*4),B_COUNT
+
+		; Jaguar RGB16 bits: RRRR.RBBB.BBGG.GGGG.
+		; Repeat it 4 times to fill the phrase-size pattern register
+		move.l	#$003F003F,B_PATD
+		move.l	#$003F003F,B_PATD+4
+
+		; Add A1_STEP after each line/outer loop iteration, use pattern
+		; data register for source.
+		move.l	#UPDA1|PATDSEL,B_CMD
 		rts
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
