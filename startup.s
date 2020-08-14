@@ -59,8 +59,8 @@ PPP		.equ	4			; Pixels per Phrase (16-bit)
 SCRN_WIDTH	.equ	320			; Width in Pixels
 SCRN_HEIGHT	.equ	240			; Height in Pixels
 
-BMP_HEIGHT	.equ	(SCRN_HEIGHT/6)		; Scaled up 6x by OP
-BMP_PHRASES	.equ	1			; Width in Phrases, OP repeats
+BMP_HEIGHT	.equ	SCRN_HEIGHT
+BMP_PHRASES	.equ	(320>>2)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; End SCREEN GEOMETRY CONFIGURATION
@@ -82,7 +82,7 @@ BMP_PHRASES	.equ	1			; Width in Phrases, OP repeats
 
 SCRN_PHRASES	.equ	(SCRN_WIDTH/PPP)	; Width in Phrases
 BITMAP_OFF  	.equ    (2*8)       		; Two Phrases
-LISTSIZE    	.equ    6       		; List length (in phrases)
+LISTSIZE    	.equ    5       		; List length (in phrases)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; Program Entry Point Follows...
 
@@ -286,11 +286,9 @@ InitLister:
 		move.l	d0,(a0)+
 		move.l	d1,(a0)+
 
-; Write a SCALED BITMAP object
+; Write a Standard BITMAP object
 		move.l	d2,d0
 		move.l	d3,d1
-
-		ori.b	#SCBITOBJ,d1		; Type = Scaled Bitmap
 
 		ori.l  #BMP_HEIGHT<<14,d1       ; Height of image
 
@@ -311,7 +309,7 @@ InitLister:
 
 ; Second Phrase of Scaled Bitmap
 		move.l	#SCRN_PHRASES>>4,d0	; Only part of top LONG is IWIDTH
-		move.l  #O_DEPTH16|(0<<15),d1   ; Bit Depth = 16-bit, Repeat data
+		move.l  #O_DEPTH16|(1<<15),d1   ; BPP = 16, Contiguous phrases
 
 		move.w  width,d4            	; Get width in clocks
 		lsr.w   #2,d4               	; /4 Pixel Divisor
@@ -323,15 +321,6 @@ InitLister:
 
 		move.l	d0,(a0)+
 		move.l	d1,(a0)+
-
-; Third Phrase of Scaled Bitmap
-		; HSCALE = 1.0, VSCALE = 6.0, REMAINDER = 6.0
-		move.l	#(1<<5)|(6<<13)|(6<<21),d1
-		clr.l	d0
-
-		move.l	d0,(a0)+
-		move.l	d1,(a0)+
-		move.l	d1,bmpupdate+8
 
 ; Write a STOP object at end of list
 		clr.l   (a0)+
@@ -357,7 +346,6 @@ UpdateList:
 
 		move.l  bmpupdate,(a0)      	; Phrase = d1.l/d0.l
 		move.l  bmpupdate+4,4(a0)
-		move.l	bmpupdate+8,20(a0)
 
 		add.l	#1,ticks		; Increment ticks semaphore
 
@@ -378,7 +366,7 @@ InitGreen:
 		; 16-bit pixels,
 		; Window Width = 4 pixels (Should be BMP_WIDTH)
 		; Blit a phrase at a time
-		move.l	#PITCH1|PIXEL16|WID4|XADDPHR,A1_FLAGS
+		move.l	#PITCH1|PIXEL16|WID320|XADDPHR,A1_FLAGS
 
 		; Start at <0 (low 16 bits), 0 (high 16 bits)>
 		move.l	#0,A1_PIXEL
@@ -404,8 +392,9 @@ InitGreen:
 		.bss
 		.qphrase
 
-		; 2 Phrases of padding to put scaled bitmap object on a quad-
-		; phrase boundary after 2 Phrases of branch objects.
+		; 2 Phrases of padding to put bitmap object on a quad-phrase
+		; boundary after 2 Phrases of branch objects.  This allows it
+		; to be either a regular bitmap or scaled bitmap entry.
 		.ds.l	4
 listbuf:    	.ds.l   LISTSIZE*2  		; Object List
 bmpupdate:  	.ds.l   3       		; 3 Longs of Scaled Bitmap for Refresh
