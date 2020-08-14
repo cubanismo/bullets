@@ -69,7 +69,8 @@ BMP_PHRASES	.equ	(320>>2)
 ; Globals
 		.globl	gSetOLP
 		.globl	olp2set
-		.globl	ticks
+		.globl	_ticks
+		.globl	_screen
 
 		.globl  a_vdb
 		.globl  a_vde
@@ -299,7 +300,7 @@ InitLister:
 		lsl.w   #3,d4
 		or.w    d4,d1                   ; Stuff YPOS in low phrase
 
-		move.l	#green,d4
+		move.l	#_screen,d4
 		lsl.l	#8,d4
 		or.l	d4,d0
 
@@ -347,7 +348,7 @@ UpdateList:
 		move.l  bmpupdate,(a0)      	; Phrase = d1.l/d0.l
 		move.l  bmpupdate+4,4(a0)
 
-		add.l	#1,ticks		; Increment ticks semaphore
+		add.l	#1,_ticks		; Increment ticks semaphore
 
 		move.w  #$101,INT1      	; Signal we're done
 		move.w  #$0,INT2
@@ -361,7 +362,7 @@ UpdateList:
 
 InitGreen:
 		; Set address of destination surface
-		move.l	#green,A1_BASE
+		move.l	#_screen,A1_BASE
 		; Contiguous phrases,
 		; 16-bit pixels,
 		; Window Width = 4 pixels (Should be BMP_WIDTH)
@@ -398,7 +399,7 @@ InitGreen:
 		.ds.l	4
 listbuf:    	.ds.l   LISTSIZE*2  		; Object List
 bmpupdate:  	.ds.l   3       		; 3 Longs of Scaled Bitmap for Refresh
-ticks:		.ds.l	1			; Incrementing # of ticks
+_ticks:		.ds.l	1			; Incrementing # of ticks
 a_hdb:  	.ds.w   1
 a_hde:      	.ds.w   1
 a_vdb:      	.ds.w   1
@@ -407,6 +408,6 @@ width:      	.ds.w   1
 height:     	.ds.w   1
 
 		.phrase
-green:		.ds.l	BMP_PHRASES*2*BMP_HEIGHT
+_screen:	.ds.l	BMP_PHRASES*2*BMP_HEIGHT
 
 		.end
