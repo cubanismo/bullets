@@ -441,7 +441,25 @@ FNTstr( int x, int y, char *_str, void *dest, long blitflags, FNThead *fnt, unsi
 	}
 
 	/* set up the colors */
-	*(volatile long *)B_PATD = fgcolor;
+	/*
+	 * XXX Work around bug in virtualjaguar!
+	 *
+	 * This should work:
+	 *
+	 *   *(volatile long *)B_PATD = fgcolor;
+	 *
+	 * VJ adjusts writes to 64-bit blitter registers such that they are
+	 * dword-swapped (E.g., a write TO B_PATD[0] goes to B_PATD[1] instead,
+	 * and vice-versa), but it fails to account for this when reading back
+	 * from these registers, at least when not in phrase mode.  See
+	 * blitter.cpp:BlitterWriteByte() and reads to PATTERNDATA/B_PATD in
+	 * blitter_generic(), specifically the READ_RDATA() macro, which seems
+	 * to try to do the right thing in phrase mode, but just passes the
+	 * offset through in pixel mode.
+	 */
+	B_PATD[0] = (unsigned long)fgcolor << 16 | (unsigned long)fgcolor;
+	B_PATD[1] = (unsigned long)fgcolor << 16 | (unsigned long)fgcolor;
+	/* End workaround! */
 	if (bgcolor) {
 		*(volatile long *)B_DSTD = bgcolor;
 	} else {
