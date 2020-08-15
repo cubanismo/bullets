@@ -1,9 +1,11 @@
-#include "blit.h"
+#include "jaguar.h"
 #include "font.h"
 
 extern FNThead fnt[];
 extern unsigned char screen[];
 extern volatile unsigned long ticks;
+extern int sprintf(char *, const char *, ...);
+extern unsigned long readgun(void);
 
 void start(void)
 {
@@ -12,41 +14,57 @@ void start(void)
 	unsigned short g = 0x3f;
 	unsigned short b = 0x1f;
 	unsigned short bgcolor;
-	int dy = 1;
-	int y = 50;
+	char str[80];
+	int y = 200;
+	int x = 20;
 	long blitflags = PITCH1|PIXEL16|WID320;
+	short lph[16];
+	short lpv[16];
+	long lpavgh;
+	long lpavgv;
+	int lpi = 0;
+	int i;
 
 	unsigned long oldticks;
 
+	/* Jaguar RGB16 bits: RRRR.RBBB.BBGG.GGGG. */
+	bgcolor = (r << 11) | (b << 6) | g;
+
+	/* Clear the screen */
+	*A1_BASE = (long)screen;
+	*A1_FLAGS = blitflags|XADDPHR;
+	*A1_PIXEL = 0ul;
+	*A1_CLIP = 0ul;
+	*A1_STEP = (1ul << 16) | (-320 & 0xfffful);
+	*B_COUNT = (240ul << 16) | 320ul;
+	(B_PATD)[0] = (unsigned long)bgcolor << 16 | bgcolor;
+	(B_PATD)[1] = (unsigned long)bgcolor << 16 | bgcolor;
+	*B_CMD = UPDA1|PATDSEL;
+
 	/* Infinite Loop */
 	while (1) {
-		/* Cycle the clear color white->gray */
-		if (r == 0) r = 0x1f; else r -= 1;
-		if (b == 0) b = 0x1f; else b -= 1;
-		if (g < 2) g = 0x3f; else g -= 2;
-		/* Jaguar RGB16 bits: RRRR.RBBB.BBGG.GGGG. */
-		bgcolor = (r << 11) | (b << 6) | g;
+		unsigned long lp = readgun();
 
-		/* Clear the screen */
-		A1_BASE = (long)screen;
-		A1_FLAGS = blitflags|XADDPHR;
-		A1_PIXEL = 0ul;
-		A1_CLIP = 0ul;
-		A1_STEP = (1ul << 16) | (-320 & 0xfffful);
-		B_COUNT = (240ul << 16) | 320ul;
-		B_PATD[0] = (unsigned long)bgcolor << 16 | bgcolor;
-		B_PATD[1] = (unsigned long)bgcolor << 16 | bgcolor;
-		B_CMD = UPDA1|PATDSEL;
+		/* Smooth out the value a bit: Average last 16 frames */
+		lph[lpi] = (unsigned short)(lp & 0xffff);
+		lpv[lpi] = (unsigned short)(lp >> 16);
+		lpi = (lpi + 1) % 16;
+		lpavgh = lpavgv = 0;
+		for (i = 0; i < 16; i++) {
+			lpavgh += lph[i];
+			lpavgv += lpv[i];
+		}
+		lpavgh >>= 4;
+		lpavgv >>= 4;
 
-		y += dy;
-		if (y > 239 || y < 1) dy = -dy;
-
-		FNTstr(100, y, "Hello the world!", screen, blitflags,
-		       fnt, 0xffff /* text color */, 0 /* no background color */);
+		/* Include a few spaces to clear prior larger numbers */
+		sprintf(str, "Hello @(%d, %d)      ", (int)lpavgh, (int)lpavgv);
+		FNTstr(x, y, str, screen, blitflags, fnt,
+		       (0x10 << 11) | (0x10 << 6) | 0x20 /* text color */,
+		       bgcolor /* background color */);
 
 		/* Wait for a new frame */
 		oldticks = ticks;
-		while (ticks < (oldticks + 4));
+		while (ticks == oldticks);
 	}
-
 }

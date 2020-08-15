@@ -5,6 +5,7 @@ CFLAGS += -mshort -Wall -fno-builtin
 
 OBJS =	startup.o \
 	bullets.o \
+	lightgun.o \
 	font.o \
 	sprintf.o \
 	util.o
