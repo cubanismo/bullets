@@ -2,10 +2,11 @@
 #include "font.h"
 
 extern FNThead fnt[];
-extern unsigned char screen[];
+extern unsigned short screen[];
 extern volatile unsigned long ticks;
 extern int sprintf(char *, const char *, ...);
 extern unsigned long readgun(void);
+extern void guninit(unsigned fb_width, unsigned fb_height);
 
 void start(void)
 {
@@ -18,12 +19,14 @@ void start(void)
 	int y = 200;
 	int x = 20;
 	long blitflags = PITCH1|PIXEL16|WID320;
-	short lph[16];
-	short lpv[16];
-	long lpavgh;
-	long lpavgv;
+	short lpx[16];
+	short lpy[16];
+	long lpavgx;
+	long lpavgy;
 	int lpi = 0;
 	int i;
+
+	guninit(320, 240);
 
 	unsigned long oldticks;
 
@@ -46,19 +49,23 @@ void start(void)
 		unsigned long lp = readgun();
 
 		/* Smooth out the value a bit: Average last 16 frames */
-		lph[lpi] = (unsigned short)(lp & 0xffff);
-		lpv[lpi] = (unsigned short)(lp >> 16);
+		lpx[lpi] = (unsigned short)(lp & 0xffff);
+		lpy[lpi] = (unsigned short)(lp >> 16);
 		lpi = (lpi + 1) % 16;
-		lpavgh = lpavgv = 0;
+		lpavgx = lpavgy = 0;
 		for (i = 0; i < 16; i++) {
-			lpavgh += lph[i];
-			lpavgv += lpv[i];
+			lpavgx += lpx[i];
+			lpavgy += lpy[i];
 		}
-		lpavgh >>= 4;
-		lpavgv >>= 4;
+		lpavgx >>= 4;
+		lpavgy >>= 4;
+
+		/* Plot the point on the framebuffer */
+		if (lpavgx < 320 && lpavgy < 240)
+			screen[320 * lpavgy + lpavgx] = (0x18 << 11) | (0x18 << 6) | 0x30;
 
 		/* Include a few spaces to clear prior larger numbers */
-		sprintf(str, "Hello @(%d, %d)      ", (int)lpavgh, (int)lpavgv);
+		sprintf(str, "Gun @(%d, %d)      ", (int)lpavgx, (int)lpavgy);
 		FNTstr(x, y, str, screen, blitflags, fnt,
 		       (0x10 << 11) | (0x10 << 6) | 0x20 /* text color */,
 		       bgcolor /* background color */);
